@@ -6,7 +6,12 @@ on:
       app_name:
         description: "App name (android:label)"
         required: true
-        default: "Quicklauncher"
+        default: "Quicklauncher 2"
+        type: string
+      app_id:
+        description: "Package name (applicationId). Different from your old app = installs side by side"
+        required: true
+        default: "com.quicklauncher.app.v2"
         type: string
       app_version:
         description: "App version (versionName, e.g. 1.0.0)"
@@ -21,7 +26,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      APP_NAME: ${{ github.event.inputs.app_name || 'Quicklauncher' }}
+      APP_NAME: ${{ github.event.inputs.app_name || 'Quicklauncher 2' }}
+      APP_ID: ${{ github.event.inputs.app_id || 'com.quicklauncher.app.v2' }}
       APP_VERSION: ${{ github.event.inputs.app_version || '1.0.0' }}
       RUN_NUMBER: ${{ github.run_number }}
 
@@ -92,6 +98,7 @@ jobs:
 
           name = os.environ["APP_NAME"]
           version = os.environ["APP_VERSION"]
+          app_id = os.environ["APP_ID"]
           run_number = int(os.environ.get("RUN_NUMBER", "1") or 1)
 
           manifest = "app/src/main/AndroidManifest.xml"
@@ -117,6 +124,8 @@ jobs:
               g = f.read()
           g, n1 = re.subn(r'versionName\s*=\s*"[^"]*"', lambda m: f'versionName = "{version}"', g)
           g, n2 = re.subn(r'versionCode\s*=\s*\d+', lambda m: f'versionCode = {code}', g)
+          g, n3 = re.subn(r'applicationId\s*=\s*"[^"]*"', lambda m: f'applicationId = "{app_id}"', g)
+          print(f"Patched applicationId={app_id} ({n3})")
           with open(gradle, "w", encoding="utf-8") as f:
               f.write(g)
           print(f"Patched versionName={version} ({n1}), versionCode={code} ({n2})")
@@ -162,6 +171,16 @@ jobs:
             echo "build-icon.png not found at repo root, keeping default icon"
           fi
 
+      - name: Use the same signing key every build (so updates install over each other)
+        run: |
+          if [ -f "$GITHUB_WORKSPACE/debug.keystore" ]; then
+            mkdir -p ~/.android
+            cp "$GITHUB_WORKSPACE/debug.keystore" ~/.android/debug.keystore
+            echo "Using debug.keystore from the repo"
+          else
+            echo "debug.keystore not found in repo root; builds will get a random key"
+          fi
+
       - name: Build debug APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: gradle assembleDebug --no-daemon
@@ -169,6 +188,6 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.inputs.app_name || 'Quicklauncher' }}
+          name: ${{ github.event.inputs.app_name || 'Quicklauncher 2' }}
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
